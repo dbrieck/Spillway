@@ -1,0 +1,28 @@
+name: scaler
+
+on:
+  push:
+    branches: [main]
+    paths: ["scaler/**", ".github/workflows/scaler.yml"]
+  pull_request:
+    paths: ["scaler/**", ".github/workflows/scaler.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scaler
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scaler/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

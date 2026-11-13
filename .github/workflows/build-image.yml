@@ -1,0 +1,192 @@
+name: build-image
+
+# Reusable workflow: bakes a Spillway runner image (../../image) with your toolchain into your project.
+# Call it from your repository on a schedule (weekly keeps actions/runner and apt packages fresh) and
+# after toolchain changes. VMs boot the newest image in the family, so there is nothing to roll out.
+#
+#   jobs:
+#     image:
+#       uses: dbrieck/spillway/.github/workflows/build-image.yml@<release tag>
+#       permissions: { contents: read, id-token: write }
+#       with:
+#         spillway_ref: <same release tag>
+#         project_id: my-ci-project
+#         workload_identity_provider: ${{ vars.SPILLWAY_WIF_PROVIDER }}   # terraform output image_build
+#         service_account: ${{ vars.SPILLWAY_IMAGE_SA }}
+#         subnetwork: ${{ vars.SPILLWAY_SUBNETWORK }}
+#         toolchain_script: ci/runner-toolchain.sh                         # path in your repository
+#
+# Runs on a GitHub-hosted runner on purpose: it must not depend on the capacity it builds.
+on:
+  workflow_call:
+    inputs:
+      spillway_ref:
+        description: "Spillway ref whose image/ template to build with (pin the tag you call this workflow at)."
+        type: string
+        default: main
+      project_id:
+        type: string
+        required: true
+      workload_identity_provider:
+        type: string
+        required: true
+      service_account:
+        type: string
+        required: true
+      subnetwork:
+        type: string
+        required: true
+      image_family:
+        description: "Must match the Terraform module's image_family."
+        type: string
+        default: spillway-runner
+      pool_name:
+        type: string
+        default: spillway
+      toolchain_script:
+        description: "Root hook in your repository that installs your toolchain. Empty: base image only."
+        type: string
+        default: ""
+      warm_cache_script:
+        description: "Hook in your repository run as the runner user to pre-fill caches. Empty: skipped."
+        type: string
+        default: ""
+      prepare_command:
+        description: "Shell command run in your checkout before the build, e.g. to fill upload_dir."
+        type: string
+        default: ""
+      upload_dir:
+        description: "Directory in your checkout copied to UPLOAD_DIR on the build VM. Empty: nothing extra."
+        type: string
+        default: ""
+      runner_owned_dirs:
+        description: "JSON list of extra directories the toolchain creates that jobs must be able to write."
+        type: string
+        default: "[]"
+      submodules:
+        type: string
+        default: "false"
+      runner_version:
+        description: "actions/runner version without the leading v. Empty: latest release."
+        type: string
+        default: ""
+      zones:
+        description: "Build VM zones, tried in order on a stockout."
+        type: string
+        default: "us-central1-a us-central1-b us-central1-c us-central1-f"
+      machine_types:
+        description: "Build VM machine types, tried in order after every zone stocked out."
+        type: string
+        default: "n2-standard-8 e2-standard-8"
+      keep_images:
+        description: "Newest images to keep in the family; older ones are deleted."
+        type: number
+        default: 3
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    name: packer build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: spillway-image-${{ inputs.project_id }}-${{ inputs.image_family }}
+      cancel-in-progress: false
+    env:
+      PROJECT: ${{ inputs.project_id }}
+      FAMILY: ${{ inputs.image_family }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: ${{ inputs.submodules }}
+
+      - uses: actions/checkout@v7
+        with:
+          repository: dbrieck/spillway
+          ref: ${{ inputs.spillway_ref }}
+          path: .spillway
+
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ inputs.workload_identity_provider }}
+          service_account: ${{ inputs.service_account }}
+
+      - uses: hashicorp/setup-packer@ce93c3c08a6c2ff2275bf4b54ff0d9a75f6c9789 # v3.4.0
+
+      - name: Resolve actions/runner version
+        id: runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.runner_version }}
+        run: |
+          v="${REQUESTED:-$(gh api repos/actions/runner/releases/latest --jq .tag_name)}"
+          echo "version=${v#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare
+        if: ${{ inputs.prepare_command != '' }}
+        env:
+          PREPARE: ${{ inputs.prepare_command }}
+        run: bash -c "$PREPARE"
+
+      - name: packer build
+        env:
+          SUBNETWORK: ${{ inputs.subnetwork }}
+          RUNNER_VERSION: ${{ steps.runner.outputs.version }}
+          POOL: ${{ inputs.pool_name }}
+          TOOLCHAIN: ${{ inputs.toolchain_script }}
+          WARM: ${{ inputs.warm_cache_script }}
+          UPLOAD: ${{ inputs.upload_dir }}
+          OWNED: ${{ inputs.runner_owned_dirs }}
+          ZONES: ${{ inputs.zones }}
+          MACHINES: ${{ inputs.machine_types }}
+        run: |
+          abs() { [ -z "$1" ] && return 0; realpath "$1"; }
+          packer init .spillway/image
+          # The build VM is temporary, so on a zone stockout try the next zone, then the next machine
+          # type. Any other failure stops the job immediately.
+          for machine in $MACHINES; do
+            for zone in $ZONES; do
+              echo "::group::packer build ($zone, $machine)"
+              set +e
+              packer build -color=false \
+                -var "project_id=$PROJECT" \
+                -var "subnetwork=$SUBNETWORK" \
+                -var "zone=$zone" \
+                -var "machine_type=$machine" \
+                -var "image_family=$FAMILY" \
+                -var "pool_name=$POOL" \
+                -var "runner_version=$RUNNER_VERSION" \
+                -var "toolchain_script=$(abs "$TOOLCHAIN")" \
+                -var "warm_cache_script=$(abs "$WARM")" \
+                -var "upload_dir=$(abs "$UPLOAD")" \
+                -var "runner_owned_dirs=$OWNED" \
+                -var "git_sha=${GITHUB_SHA::12}" \
+                .spillway/image 2>&1 | tee packer.log
+              rc=${PIPESTATUS[0]}
+              set -e
+              echo "::endgroup::"
+              [ "$rc" -eq 0 ] && exit 0
+              if ! grep -qE 'does not have enough resources|ZONE_RESOURCE_POOL_EXHAUSTED' packer.log; then
+                echo "::error::packer build failed ($zone, $machine); not a stockout, so not retrying"
+                exit "$rc"
+              fi
+              echo "::warning::stockout in $zone for $machine; trying next"
+            done
+          done
+          echo "::error::no capacity for the build VM in any zone"
+          exit 1
+
+      - name: Prune old images (keep newest ${{ inputs.keep_images }})
+        env:
+          KEEP: ${{ inputs.keep_images }}
+        run: |
+          gcloud compute images list --project "$PROJECT" --no-standard-images \
+            --filter="family=$FAMILY" --sort-by=~creationTimestamp --format='value(name)' \
+            | tail -n +"$((KEEP + 1))" \
+            | while read -r img; do
+                echo "deleting $img"
+                gcloud compute images delete "$img" --project "$PROJECT" --quiet
+              done

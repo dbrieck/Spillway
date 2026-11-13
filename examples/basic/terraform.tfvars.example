@@ -1,0 +1,4 @@
+project_id          = "my-ci-project"
+github_app_id       = "123456"
+github_repositories = ["my-org/my-app"]
+# runner_image_available = true   # after the first image build
