@@ -4,7 +4,7 @@
   "description": "Launches one-job GCE Spot VMs as just-in-time GitHub Actions runners when jobs queue, and cleans them up.",
   "type": "module",
   "engines": {
-    "node": "22"
+    "node": ">=22"
   },
   "main": "dist/main.js",
   "scripts": {

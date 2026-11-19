@@ -145,7 +145,9 @@ resource "google_cloud_run_v2_service" "scaler" {
 
   lifecycle {
     # New scaler versions roll out with ../scripts/deploy-scaler.sh; Terraform owns everything else.
-    ignore_changes = [template[0].containers[0].image, client, client_version]
+    # The API also returns a service-level scaling block (min 0, manual 0) that is not declared here,
+    # which shows as a diff on every plan. Instance limits live in template.scaling above.
+    ignore_changes = [template[0].containers[0].image, client, client_version, scaling]
 
     precondition {
       condition     = alltrue([for z in var.zones : can(regex("^(.+)-[a-z]$", z)) && contains(keys(var.runner_regions), try(regex("^(.+)-[a-z]$", z)[0], ""))])
