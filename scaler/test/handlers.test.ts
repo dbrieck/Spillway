@@ -20,6 +20,20 @@ describe("handleWebhook", () => {
     expect(tasks.tasks[0]!.scheduleAt.getTime() - NOW.getTime()).toBe(45_000);
   });
 
+  it("logs and enqueues the repo in lowercase, the same form the janitor sweep uses", async () => {
+    const { deps, tasks, github } = makeDeps();
+    const logs: Array<{ msg: string; repo: unknown }> = [];
+    deps.log = (msg, fields) => logs.push({ msg, repo: fields?.repo });
+    github.jobs.set(101, job({ id: 101 }));
+
+    await handleWebhook(deps, "workflow_job", queued(undefined, "Acme/App"), BASE);
+    expect(tasks.tasks[0]!.body.repo).toBe("acme/app");
+
+    await handleReconcile(deps, { repo: "Acme/App", jobId: 101 });
+    const repos = logs.filter((l) => l.msg === "webhook queued job" || l.msg === "reconcile decision").map((l) => l.repo);
+    expect(repos).toEqual(["acme/app", "acme/app"]);
+  });
+
   it("dedupes redeliveries of the same job", async () => {
     const { deps, tasks } = makeDeps();
     await handleWebhook(deps, "workflow_job", queued(), BASE);

@@ -81,7 +81,9 @@ export async function handleWebhook(deps: Deps, event: string | undefined, paylo
   if (event !== "workflow_job") return ok({ result: "ignored", reason: `event ${event}` });
 
   const p = payload as WorkflowJobPayload;
-  const repo = p.repository?.full_name;
+  // Lowercase like ALLOWED_REPOS (which the janitor sweep enqueues), so task bodies and logs carry one
+  // form of the name whichever path queued the job. GitHub's API ignores the case.
+  const repo = p.repository?.full_name?.toLowerCase();
   const job = p.workflow_job;
   if (p.action === "completed" && repo && job?.id) return handleCompletedJob(deps, repo, job, baseUrl);
   if (p.action !== "queued" || !repo || !job?.id) return ok({ result: "ignored", reason: `action ${p.action}` });
@@ -154,14 +156,14 @@ export async function handleRerun(deps: Deps, body: unknown): Promise<HandlerRes
   if (decision.kind === "run-in-progress" || decision.kind === "rerun") {
     decision = decideRerun({ ...base, preempted: await deps.compute.wasPreempted(body.runnerName) });
   }
-  deps.log("rerun decision", { ...body, decision });
+  deps.log("rerun decision", { ...body, repo: body.repo.toLowerCase(), decision });
 
   switch (decision.kind) {
     case "run-in-progress":
       return ok({ result: decision.kind }, 503);
     case "rerun":
       await deps.github.rerunFailedJobs(repo, body.runId);
-      deps.log("re-ran failed jobs after preemption", { repo: body.repo, runId: body.runId, runner: body.runnerName });
+      deps.log("re-ran failed jobs after preemption", { repo: body.repo.toLowerCase(), runId: body.runId, runner: body.runnerName });
       return ok({ result: "rerun", runId: body.runId });
     default:
       return ok({ result: decision.kind });
@@ -207,7 +209,7 @@ export async function handleReconcile(deps: Deps, body: unknown): Promise<Handle
     const fresh = await deps.github.getJob(repo, body.jobId);
     decision = decideReconcile({ ...input, jobStatus: fresh.status, busyRunnerNames: busy });
   }
-  deps.log("reconcile decision", { repo: body.repo, jobId: job.id, decision });
+  deps.log("reconcile decision", { repo: body.repo.toLowerCase(), jobId: job.id, decision });
 
   switch (decision.kind) {
     case "paused":
@@ -226,7 +228,7 @@ export async function handleReconcile(deps: Deps, body: unknown): Promise<Handle
         // closed: a run whose head repository is unknown (deleted fork) doesn't get a runner either.
         const head = await deps.github.getRunHeadRepository(repo, job.runId);
         if (head?.toLowerCase() !== body.repo.toLowerCase()) {
-          deps.log("reconcile skipped fork", { repo: body.repo, jobId: job.id, head });
+          deps.log("reconcile skipped fork", { repo: body.repo.toLowerCase(), jobId: job.id, head });
           return ok({ result: "ignored", reason: "fork pull request" });
         }
       }
