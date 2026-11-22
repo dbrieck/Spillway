@@ -61,7 +61,8 @@ outlives the job. Jobs that need GCP authenticate with their own workload identi
 | `.github/workflows/build-image.yml` | Reusable workflow that builds your image from your repository |
 | `scripts/deploy-scaler.sh` | Tests, builds and rolls out a scaler version |
 
-Start with [setup](docs/setup.md); [tuning](docs/tuning.md) covers the knobs, machine types, quotas and cost.
+Start with [setup](docs/setup.md); [tuning](docs/tuning.md) covers the knobs, machine types, quotas and cost,
+including Cloud NAT data, which on a busy pool can cost as much as the VMs.
 
 ## Development
 

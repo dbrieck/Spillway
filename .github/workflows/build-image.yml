@@ -1,7 +1,7 @@
 name: build-image
 
 # Reusable workflow: bakes a Spillway runner image (../../image) with your toolchain into your project.
-# Call it from your repository on a schedule (weekly keeps actions/runner and apt packages fresh) and
+# Call it from your repository on a schedule (daily keeps actions/runner, packages and the workspace seed fresh) and
 # after toolchain changes. VMs boot the newest image in the family, so there is nothing to roll out.
 #
 #   jobs:
@@ -59,6 +59,19 @@ on:
         description: "Directory in your checkout copied to UPLOAD_DIR on the build VM. Empty: nothing extra."
         type: string
         default: ""
+      seed_workspace:
+        description: >-
+          Seed the runner's job workspace with this commit (depth 1), so a job's actions/checkout fetches only
+          what changed since the image instead of the whole tree. Runner VMs download through Cloud NAT,
+          which bills every byte; see docs/tuning.md (Cloud NAT data).
+        type: boolean
+        default: true
+      action_archives:
+        description: >-
+          Bake every action your workflows use into the image (ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE), so jobs
+          copy them instead of downloading them.
+        type: boolean
+        default: true
       runner_owned_dirs:
         description: "JSON list of extra directories the toolchain creates that jobs must be able to write."
         type: string
@@ -131,6 +144,17 @@ jobs:
           PREPARE: ${{ inputs.prepare_command }}
         run: bash -c "$PREPARE"
 
+      # Per-job download savers for image/extras.sh. Both are best effort: a VM without them downloads as before.
+      - name: Seed the job workspace
+        if: ${{ inputs.seed_workspace }}
+        run: bash .spillway/scripts/pack-workspace-seed.sh "$RUNNER_TEMP/spillway-extra"
+
+      - name: Collect action archives
+        if: ${{ inputs.action_archives }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .spillway/scripts/collect-action-archives.sh "$RUNNER_TEMP/spillway-extra/actions"
+
       - name: packer build
         env:
           SUBNETWORK: ${{ inputs.subnetwork }}
@@ -140,10 +164,12 @@ jobs:
           WARM: ${{ inputs.warm_cache_script }}
           UPLOAD: ${{ inputs.upload_dir }}
           OWNED: ${{ inputs.runner_owned_dirs }}
+          SEED_REPO: ${{ inputs.seed_workspace && github.repository || '' }}
           ZONES: ${{ inputs.zones }}
           MACHINES: ${{ inputs.machine_types }}
         run: |
           abs() { [ -z "$1" ] && return 0; realpath "$1"; }
+          mkdir -p "$RUNNER_TEMP/spillway-extra"
           packer init .spillway/image
           # The build VM is temporary, so on a zone stockout try the next zone, then the next machine
           # type. Any other failure stops the job immediately.
@@ -163,6 +189,8 @@ jobs:
                 -var "warm_cache_script=$(abs "$WARM")" \
                 -var "upload_dir=$(abs "$UPLOAD")" \
                 -var "runner_owned_dirs=$OWNED" \
+                -var "extra_dir=$(abs "$RUNNER_TEMP/spillway-extra")" \
+                -var "workspace_repo=$SEED_REPO" \
                 -var "git_sha=${GITHUB_SHA::12}" \
                 .spillway/image 2>&1 | tee packer.log
               rc=${PIPESTATUS[0]}

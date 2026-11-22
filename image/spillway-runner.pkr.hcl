@@ -87,6 +87,18 @@ variable "upload_dir" {
   default     = ""
 }
 
+variable "extra_dir" {
+  type        = string
+  description = "Local directory with build-image.yml's per-job download savers (action archives, workspace seed) for image/extras.sh. Empty: none."
+  default     = ""
+}
+
+variable "workspace_repo" {
+  type        = string
+  description = "owner/name of the repository whose job workspace the seed in extra_dir becomes. Empty: no seed."
+  default     = ""
+}
+
 variable "runner_owned_dirs" {
   type        = list(string)
   description = "Extra directories the toolchain hook created that jobs must be able to write (e.g. an SDK root)."
@@ -107,6 +119,8 @@ locals {
   # hooks directory so the step needs no special case.
   upload_dir = "${trimsuffix(var.upload_dir != "" ? var.upload_dir : "${path.root}/hooks", "/")}/"
   upload_vm  = "/var/tmp/spillway-upload"
+  extra_dir  = "${trimsuffix(var.extra_dir != "" ? var.extra_dir : "${path.root}/hooks", "/")}/"
+  extra_vm   = "/var/tmp/spillway-extra"
 }
 
 source "googlecompute" "runner" {
@@ -147,7 +161,7 @@ build {
   sources = ["source.googlecompute.runner"]
 
   provisioner "shell" {
-    inline = ["mkdir -p /tmp/image /tmp/upload"]
+    inline = ["mkdir -p /tmp/image /tmp/upload /tmp/extra"]
   }
 
   provisioner "file" {
@@ -160,9 +174,18 @@ build {
     destination = "/tmp/upload"
   }
 
+  provisioner "file" {
+    source      = local.extra_dir
+    destination = "/tmp/extra"
+  }
+
   # finalize.sh clears /tmp, so park the uploads outside it.
   provisioner "shell" {
-    inline = ["sudo rm -rf ${local.upload_vm}", "sudo mv /tmp/upload ${local.upload_vm}"]
+    inline = [
+      "sudo rm -rf ${local.upload_vm} ${local.extra_vm}",
+      "sudo mv /tmp/upload ${local.upload_vm}",
+      "sudo mv /tmp/extra ${local.extra_vm}",
+    ]
   }
 
   provisioner "shell" {
@@ -175,6 +198,13 @@ build {
     execute_command  = "sudo -E env {{ .Vars }} bash '{{ .Path }}'"
     environment_vars = ["RUNNER_DIR=/actions-runner", "TOOL_CACHE=/opt/hostedtoolcache", "UPLOAD_DIR=${local.upload_vm}"]
     script           = local.toolchain
+  }
+
+  # Before finalize.sh, which hands the seeded workspace to the runner user.
+  provisioner "shell" {
+    execute_command  = "sudo -E env {{ .Vars }} bash '{{ .Path }}'"
+    environment_vars = ["EXTRA_DIR=${local.extra_vm}", "WORKSPACE_REPO=${var.workspace_repo}"]
+    script           = "${path.root}/extras.sh"
   }
 
   provisioner "shell" {
@@ -190,6 +220,6 @@ build {
   }
 
   provisioner "shell" {
-    inline = ["sudo rm -rf ${local.upload_vm}"]
+    inline = ["sudo rm -rf ${local.upload_vm} ${local.extra_vm}"]
   }
 }

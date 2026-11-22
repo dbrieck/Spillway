@@ -72,3 +72,33 @@ janitor runs every 2 minutes.
 *Measured,* first week on `n2` Spot before any of the tuning above: 413 VM-hours (about $96), $19 of
 Cloud NAT data and $5 of disks. Cloud Run, Cloud Tasks and Cloud Scheduler stayed within the free tier.
 The knobs above were tuned after that week; re-measure your own pool after changing them.
+
+### Cloud NAT data
+
+Runner VMs have no public IP, so everything a job downloads from the internet goes through Cloud NAT,
+which bills $0.045 per GiB processed. Google APIs and Cloud Storage don't count: the subnet has Private
+Google Access. On a busy pool NAT data can cost as much as the VMs. One pool measured 282 MB per VM over two
+weeks, about $130 for 11,900 VMs, almost all of it things every job downloaded again:
+
+| What | Per job | Fix |
+| --- | --- | --- |
+| `actions/checkout` of the whole tree | ~95 MB | `seed_workspace` (on by default): ~11 MB with a week-old image |
+| Actions themselves (checkout, setup-*, upload-artifact...) | ~10 MB | `action_archives` (on by default) |
+| `setup-dotnet`'s extra LTS runtime, `setup-java`, `setup-python`, Playwright browsers, servers fetched by URL | 30-350 MB | Install them in the toolchain hook at the versions your workflows ask for |
+| Package restores (npm, NuGet, pip) | varies | Warm the caches in the warm-cache hook |
+| `fetch-depth: 0` | the whole history | Fetch only the commits the job needs |
+
+The seed and the warm caches age with the image: a job fetches everything that changed since the
+build. A daily image build keeps that small; the example in [setup](setup.md#6-build-the-first-image)
+runs one.
+
+To find your own per-VM figure:
+
+```sh
+node scripts/nat-bytes.mjs --project my-ci-project --start 2026-11-20T00:00:00Z --end 2026-11-22T00:00:00Z
+```
+
+It divides the NAT gateways' received bytes by the number of VMs the scaler launched. To see which job
+pulls what, group `compute.googleapis.com/instance/network/received_bytes_count` by instance name and
+match each instance to the job that ran on it (the Actions API's `runner_name`; the job id in a VM's
+name is the job that triggered the launch, which may not be the one it ran).
