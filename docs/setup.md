@@ -106,6 +106,9 @@ Pull requests from forks never get a runner unless you set `allow_fork_prs = tru
 
 ## If something is off
 
+[Operations](operations.md) has the full troubleshooting table, pausing and draining, and how to debug a
+runner VM. The two most common first-day problems:
+
 - **The scaler crashes with `Missing required env var`:** a `gcloud run deploy` created a bare
   `ci-scaler` service. Delete it (`gcloud run services delete ci-scaler`) and run `terraform apply`.
 - **Jobs stay queued:** check the scaler's logs in Cloud Run for `reconcile decision` and
