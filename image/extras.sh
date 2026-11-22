@@ -24,20 +24,31 @@ fi
 
 # The workspace path the runner uses for a repository: _work/<name>/<name>. finalize.sh hands /actions-runner
 # to the runner user afterwards. actions/checkout keeps a repository whose origin URL is exactly
-# https://github.com/<owner>/<repo>; anything else it deletes and clones as usual.
+# https://github.com/<owner>/<repo>; anything else it deletes and clones as usual. Best effort: a failed seed
+# only costs a full checkout per job, so it warns instead of failing the image build.
+seed_workspace() {
+  local ws="$1" seed="$2"
+  # The tar comes from the GitHub-hosted runner's user; as root, keep root ownership so git trusts it.
+  tar -xf "${EXTRA}/workspace-seed.tar" --no-same-owner -C "${seed}" || return 1
+  rm -rf "${ws}"
+  mkdir -p "${ws}" || return 1
+  git -C "${ws}" init -q &&
+    git -C "${ws}" remote add origin "https://github.com/${WORKSPACE_REPO}" &&
+    git -C "${ws}" config gc.auto 0 &&
+    git -C "${ws}" -c safe.directory='*' fetch -q --no-tags --depth=1 "file://${seed}"       refs/remotes/origin/seed:refs/remotes/origin/seed &&
+    git -C "${ws}" checkout -q --detach refs/remotes/origin/seed
+}
+
 if [ -f "${EXTRA}/workspace-seed.tar" ] && [ -n "${WORKSPACE_REPO:-}" ]; then
   name="${WORKSPACE_REPO#*/}"
   ws="${RUNNER_DIR}/_work/${name}/${name}"
   log "Workspace seed (${ws})"
   seed="$(mktemp -d)"
-  tar -xf "${EXTRA}/workspace-seed.tar" -C "${seed}"
-  rm -rf "${ws}"
-  mkdir -p "${ws}"
-  git -C "${ws}" init -q
-  git -C "${ws}" remote add origin "https://github.com/${WORKSPACE_REPO}"
-  git -C "${ws}" config gc.auto 0
-  git -C "${ws}" fetch -q --no-tags --depth=1 "file://${seed}" refs/remotes/origin/seed:refs/remotes/origin/seed
-  git -C "${ws}" checkout -q --detach refs/remotes/origin/seed
-  git -C "${ws}" log -1 --format='seeded at %H (%ci)'
+  if seed_workspace "${ws}" "${seed}"; then
+    git -C "${ws}" log -1 --format='seeded at %H (%ci)'
+  else
+    echo "WARNING: workspace seed failed; jobs will check out the full tree"
+    rm -rf "${ws}"
+  fi
   rm -rf "${seed}"
 fi
