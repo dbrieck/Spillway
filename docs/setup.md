@@ -67,7 +67,9 @@ workflow from your repository with the values from `terraform output image_build
 ```yaml
 name: runner image
 on:
-  schedule: [{ cron: "17 7 * * 1" }] # weekly: fresh actions/runner and apt packages
+  # Daily: fresh actions/runner and packages, and a fresh workspace seed and warm caches, which keep
+  # what each job downloads through Cloud NAT small (docs/tuning.md).
+  schedule: [{ cron: "17 7 * * *" }]
   workflow_dispatch:
 jobs:
   image:
