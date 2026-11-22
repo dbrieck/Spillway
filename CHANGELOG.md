@@ -9,6 +9,10 @@ Releases are tagged `vMAJOR.MINOR.PATCH`. Pin the commit SHA, not the tag ([upgr
   changelog.
 - `scripts/deploy-scaler.sh` refuses to build when `EXPECTED_COMMIT` is set and the checkout is at a
   different commit.
+- `scripts/runner-speed.mjs` compares job run times on Spillway runners with your other self-hosted
+  runners.
+- Examples: `warm-nuget.sh` (NuGet cache warming), `pack-sources.sh` (a source snapshot that includes
+  submodules) and `check-pins.sh` (a CI check that the image's toolchain matches the repository).
 
 ## v0.1.1 (2026-11-19)
 

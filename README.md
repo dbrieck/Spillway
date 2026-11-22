@@ -58,9 +58,10 @@ outlives the job. Jobs that need GCP authenticate with their own workload identi
 | `scaler/` | The Cloud Run service (TypeScript). Decision logic lives in `src/policy.ts`, all of it unit-tested |
 | `terraform/` | Module: network (subnet + Cloud NAT per region, IAP-only ingress), service accounts, instance template, secrets, Cloud Run, Cloud Tasks, Scheduler, and workload identity for image builds |
 | `image/` | Packer template: a generic base (actions/runner, one-job boot service) plus your toolchain hook |
-| `examples/` | A root module using the Terraform module, and example image hooks |
+| `examples/` | A root module using the Terraform module, example image hooks (Node toolchain, npm and NuGet cache warming, a source snapshot with submodules) and a CI check for toolchain drift |
 | `.github/workflows/build-image.yml` | Reusable workflow that builds your image from your repository |
 | `scripts/deploy-scaler.sh` | Tests, builds and rolls out a scaler version |
+| `scripts/runner-speed.mjs` | Compares job run times on Spillway runners with your other self-hosted runners |
 
 Start with [setup](docs/setup.md). After that:
 
