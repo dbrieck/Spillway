@@ -6,7 +6,7 @@ Releases are tagged `vMAJOR.MINOR.PATCH`. Pin the commit SHA, not the tag ([upgr
 
 - Docs: an [operations guide](docs/operations.md) (checking the pool, pausing and draining,
   troubleshooting, debugging a VM, canarying a scaler version), [upgrading](docs/upgrading.md), and this
-  changelog.
+  changelog. Upgrading covers adopting an existing install with `moved` or `import` blocks.
 - `scripts/deploy-scaler.sh` refuses to build when `EXPECTED_COMMIT` is set and the checkout is at a
   different commit.
 - `scripts/runner-speed.mjs` compares job run times on Spillway runners with your other self-hosted
