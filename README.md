@@ -4,8 +4,9 @@ Scale-to-zero GitHub Actions runners on GCP Spot VMs. When a job queues, Spillwa
 registers as a just-in-time runner, runs that one job, and powers off. When nothing is queued, it runs
 nothing.
 
-> **Work in progress.** Extracted from a production setup that runs a real product's CI today. The
-> scaler, Terraform module and image template are here; the write-up and decision records are next.
+Spillway has run a production monorepo's CI since September 2026, where it was built, and that install
+has used the released module since v0.1.0. Releases and what changed in each are in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## How it works
 
@@ -61,7 +62,12 @@ outlives the job. Jobs that need GCP authenticate with their own workload identi
 | `.github/workflows/build-image.yml` | Reusable workflow that builds your image from your repository |
 | `scripts/deploy-scaler.sh` | Tests, builds and rolls out a scaler version |
 
-Start with [setup](docs/setup.md); [tuning](docs/tuning.md) covers the knobs, machine types, quotas and cost.
+Start with [setup](docs/setup.md). After that:
+
+- [operations](docs/operations.md): checking the pool, pausing and draining, troubleshooting, debugging
+  a VM, rolling out a scaler version;
+- [tuning](docs/tuning.md): the knobs, machine types, quotas and cost;
+- [upgrading](docs/upgrading.md): pinning a release and moving to the next one.
 
 ## Development
 
