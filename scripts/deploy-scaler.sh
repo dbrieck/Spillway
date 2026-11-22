@@ -4,10 +4,23 @@
 # is how new scaler versions ship. Needs Docker and an authenticated gcloud.
 #
 #   scripts/deploy-scaler.sh <project> [region]      # from the repository root
+#
+# Set EXPECTED_COMMIT to the full SHA your Terraform pins (docs/upgrading.md) and the script refuses to
+# build anything else, e.g. a checkout of a tag that was moved since you pinned it:
+#
+#   EXPECTED_COMMIT=<sha> scripts/deploy-scaler.sh <project>
 set -euo pipefail
 
 PROJECT="${1:?usage: deploy-scaler.sh <project> [region]}"
 REGION="${2:-us-central1}"
+
+if [ -n "${EXPECTED_COMMIT:-}" ]; then
+  head="$(git rev-parse HEAD)"
+  if [ "${head}" != "${EXPECTED_COMMIT}" ]; then
+    echo "This checkout is at ${head}, not EXPECTED_COMMIT ${EXPECTED_COMMIT}. Check out the pinned commit." >&2
+    exit 1
+  fi
+fi
 SERVICE=ci-scaler # names fixed by the Terraform module
 IMAGE_REPO="${REGION}-docker.pkg.dev/${PROJECT}/ci-runners/ci-scaler"
 
