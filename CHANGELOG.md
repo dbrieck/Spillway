@@ -9,6 +9,8 @@ Releases are tagged `vMAJOR.MINOR.PATCH`. Pin the commit SHA, not the tag ([upgr
   changelog. Upgrading covers adopting an existing install with `moved` or `import` blocks.
 - `scripts/deploy-scaler.sh` refuses to build when `EXPECTED_COMMIT` is set and the checkout is at a
   different commit.
+- Tuning: measured cost of two weeks on the tuned pool, where Cloud NAT data outweighs VM time, and
+  how to measure your own pool without a billing export.
 - `scripts/runner-speed.mjs` compares job run times on Spillway runners with your other self-hosted
   runners.
 - Examples: `warm-nuget.sh` (NuGet cache warming), `pack-sources.sh` (a source snapshot that includes

@@ -2,7 +2,7 @@
 
 Every knob is a variable of the Terraform module, applied to the scaler as Cloud Run env by
 `terraform apply`. Numbers below marked *measured* come from a production pool running a busy
-monorepo's CI in October 2026; re-check prices and quotas for your own project before relying on them.
+monorepo's CI from September to November 2026; re-check prices and quotas for your own project before relying on them.
 
 ## Knobs
 
@@ -69,6 +69,46 @@ janitor runs every 2 minutes.
 
 ## Cost
 
-*Measured,* first week on `n2` Spot before any of the tuning above: 413 VM-hours (about $96), $19 of
-Cloud NAT data and $5 of disks. Cloud Run, Cloud Tasks and Cloud Scheduler stayed within the free tier.
-The knobs above were tuned after that week; re-measure your own pool after changing them.
+*Measured,* two weeks in November 2026 (Nov 8 to 21) on the tuned pool: `c3d` Spot first, the small tier
+on, no public IPs, everything going out through Cloud NAT. 11,900 VMs ran about 1,480 VM-hours, 80% of them
+on `c3d-standard-4`, most of the rest on `c3d-standard-8`, 3% outside `us-central1`. Priced with
+the Cloud Billing catalog on Nov 22:
+
+| Item | Usage | Cost |
+|---|---|---|
+| Spot VMs (`c3d-standard-4` $0.042/h, `c3d-standard-8` $0.083/h in `us-central1`) | 1,480 VM-hours | $75 |
+| Cloud NAT data processing ($0.045/GiB, both directions) | 3,180 GiB | $143 |
+| Persistent disks (80 GB `pd-balanced`, from boot until the janitor deletes them) | about 1,780 disk-hours | $19 |
+| Cloud NAT gateway and IP | | $4 |
+| **Total** | | **about $240, or $17 a day** |
+
+Cloud Run, Cloud Tasks and Cloud Scheduler stayed within the free tier.
+
+**NAT data costs more than the VMs.** Each VM pulled about 290 MB through NAT: actions, checkouts,
+artifacts, package restores and browser downloads. With no public IP, every byte from outside Google
+pays NAT data processing, and at Spot prices that adds up faster than VM time. To bring it down:
+
+- warm the package caches in the image (`examples/image-hooks/warm-*.sh`) and rebuild it weekly, so
+  restores are mostly cache hits;
+- bake large, slow-changing downloads (browsers, SDKs) into the toolchain hook instead of fetching them
+  per job;
+- keep artifacts passed between jobs small, or keep them in Cloud Storage: Google APIs go through
+  Private Google Access, which NAT doesn't bill.
+
+*Measured,* first week (late September 2026) on `n2` Spot, mostly with public IPs, before any of the tuning above:
+413 VM-hours (about $96), $19 of Cloud NAT data and $5 of disks.
+
+### Measuring your own pool
+
+Without a billing export, Cloud Monitoring has the usage and the Cloud Billing catalog API has the prices
+(Compute Engine is service `6F81-5844-456A`; NAT is under Networking, `E505-1604-58F8`).
+
+- **VM-hours:** sum `compute.googleapis.com/instance/uptime` per instance, filtered to
+  `metric.labels.instance_name=starts_with("<runner_name_prefix>")`, and join each instance to its
+  `launched runner` log line for machine type, zone and provisioning model. Don't group the metric by
+  `metadata.system_labels` or `metadata.user_labels`: for short-lived runner VMs many samples come
+  without that metadata, and a grouped query silently drops them (half the hours or more, here).
+- **NAT data:** sum `router.googleapis.com/nat/sent_bytes_count` and `nat/received_bytes_count` by
+  region.
+- **Spot prices** move monthly and differ a lot by family and region (in Nov 2026, Spot `c3d` cost
+  about twice as much in `us-east4` as in `us-central1`). Pull them fresh before comparing.
