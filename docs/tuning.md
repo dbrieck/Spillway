@@ -71,20 +71,23 @@ janitor runs every 2 minutes.
 
 *Measured,* two weeks in November 2026 (Nov 8 to 21) on the tuned pool: `c3d` Spot first, the small tier
 on, no public IPs, everything going out through Cloud NAT. 11,900 VMs ran about 1,480 VM-hours, 80% of them
-on `c3d-standard-4`, most of the rest on `c3d-standard-8`, 3% outside `us-central1`. Priced with
-the Cloud Billing catalog on Nov 22:
+on `c3d-standard-4`, most of the rest on `c3d-standard-8`, 3% outside `us-central1`. From the Cloud
+Billing report for the project:
 
 | Item | Usage | Cost |
 |---|---|---|
-| Spot VMs (`c3d-standard-4` $0.042/h, `c3d-standard-8` $0.083/h in `us-central1`) | 1,480 VM-hours | $75 |
-| Cloud NAT data processing ($0.045/GiB, both directions) | 3,180 GiB | $143 |
-| Persistent disks (80 GB `pd-balanced`, from boot until the janitor deletes them) | about 1,780 disk-hours | $19 |
-| Cloud NAT gateway and IP | | $4 |
-| **Total** | | **about $240, or $17 a day** |
+| Cloud NAT data processing | 2,921 GiB | $131 |
+| Spot `c3d` vCPU and memory | 7,856 vCPU-hours | $86 |
+| Persistent disks (80 GB `pd-balanced` each) | 205 GiB-months | $21 |
+| Cloud Run (the scaler) | | $9 |
+| Internet egress | 40 GiB | $5 |
+| Cloud NAT gateway and everything else | | $6 |
+| **Total** | | **$257, about $18 a day** |
 
-Cloud Run, Cloud Tasks and Cloud Scheduler stayed within the free tier.
+The two weeks before, mostly before runners moved behind Cloud NAT, cost $97. Cloud Tasks and Cloud
+Scheduler stayed within the free tier; Cloud Run did not at this volume.
 
-**NAT data costs more than the VMs.** Each VM pulled about 290 MB through NAT: actions, checkouts,
+**NAT data costs more than the VMs.** Each VM pulled about 250 MB through NAT: actions, checkouts,
 artifacts, package restores and browser downloads. With no public IP, every byte from outside Google
 pays NAT data processing, and at Spot prices that adds up faster than VM time. To bring it down:
 
@@ -100,8 +103,10 @@ pays NAT data processing, and at Spot prices that adds up faster than VM time. T
 
 ### Measuring your own pool
 
-Without a billing export, Cloud Monitoring has the usage and the Cloud Billing catalog API has the prices
-(Compute Engine is service `6F81-5844-456A`; NAT is under Networking, `E505-1604-58F8`).
+The Cloud Billing report, grouped by SKU and filtered to the project, is the source of truth. To see where
+the usage comes from, or without access to billing, Cloud Monitoring has the usage and the Cloud Billing
+catalog API has the prices (Compute Engine is service `6F81-5844-456A`; NAT is under Networking,
+`E505-1604-58F8`). Priced that way, the two weeks above came within about 15% of the bill on each line.
 
 - **VM-hours:** sum `compute.googleapis.com/instance/uptime` per instance, filtered to
   `metric.labels.instance_name=starts_with("<runner_name_prefix>")`, and join each instance to its
