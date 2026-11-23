@@ -67,7 +67,8 @@ Start with [setup](docs/setup.md). After that:
 
 - [operations](docs/operations.md): checking the pool, pausing and draining, troubleshooting, debugging
   a VM, rolling out a scaler version;
-- [tuning](docs/tuning.md): the knobs, machine types, quotas and cost;
+- [tuning](docs/tuning.md): the knobs, machine types, quotas and cost, including Cloud NAT data,
+  which on a busy pool can cost more than the VMs;
 - [upgrading](docs/upgrading.md): pinning a release and moving to the next one.
 
 ## Development

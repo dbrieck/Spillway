@@ -144,9 +144,10 @@ any env you changed by hand, which is what step 4 relies on.
 
 ## The runner image
 
-- **Rebuild it weekly** (the setup's example workflow runs every Monday) to pick up the latest
-  actions/runner, OS patches and fresh package caches. The reusable workflow keeps the newest few images
-  (`keep_images`).
+- **Rebuild it daily** (the setup's example workflow does) to pick up the latest actions/runner, OS
+  patches, a fresh workspace seed and fresh package caches. The seed and caches age with the image, and
+  a job downloads through Cloud NAT whatever changed since the build ([tuning](tuning.md#cloud-nat-data)).
+  The reusable workflow keeps the newest few images (`keep_images`).
 - **Bump the toolchain hook with the project.** When the repository moves to a new SDK or tool version,
   change the hook in the same pull request and rebuild the image after merging.
 - **Roll back a bad image** by deprecating it; the image family then resolves to the previous one:

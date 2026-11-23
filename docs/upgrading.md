@@ -14,8 +14,8 @@ Tags can be moved; commits can't. Pin the release's full commit SHA and keep the
 the same way you would pin a third-party action:
 
 ```hcl
-# v0.1.1
-source = "git::https://github.com/dbrieck/spillway.git//terraform?ref=ea33603aafacdd6a9d200d22d36c40bff3b61a0e"
+# v0.2.1
+source = "git::https://github.com/dbrieck/spillway.git//terraform?ref=4f03e460c28e3a2d5f03f3346474f335c30d6231"
 ```
 
 Look the SHA up with `git ls-remote https://github.com/dbrieck/spillway.git refs/tags/<tag>`, and
@@ -39,7 +39,7 @@ Bump all three pins in one pull request in your infrastructure repository, then:
 4. Deploy the scaler from the pinned checkout. To try it on one VM first, follow the canary in
    [operations](operations.md#rolling-out-a-new-scaler-version).
 5. If the release changed anything under `image/`, run your image workflow once instead of waiting for
-   the weekly build.
+   the next scheduled build.
 
 ## Rolling back
 

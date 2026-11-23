@@ -87,19 +87,41 @@ Billing report for the project:
 The two weeks before, mostly before runners moved behind Cloud NAT, cost $97. Cloud Tasks and Cloud
 Scheduler stayed within the free tier; Cloud Run did not at this volume.
 
-**NAT data costs more than the VMs.** Each VM pulled about 250 MB through NAT: actions, checkouts,
-artifacts, package restores and browser downloads. With no public IP, every byte from outside Google
-pays NAT data processing, and at Spot prices that adds up faster than VM time. To bring it down:
-
-- warm the package caches in the image (`examples/image-hooks/warm-*.sh`) and rebuild it weekly, so
-  restores are mostly cache hits;
-- bake large, slow-changing downloads (browsers, SDKs) into the toolchain hook instead of fetching them
-  per job;
-- keep artifacts passed between jobs small, or keep them in Cloud Storage: Google APIs go through
-  Private Google Access, which NAT doesn't bill.
+NAT data costs more than the VMs; [Cloud NAT data](#cloud-nat-data) below says where it comes from
+and how to cut it.
 
 *Measured,* first week (late September 2026) on `n2` Spot, mostly with public IPs, before any of the tuning above:
-413 VM-hours (about $96), $19 of Cloud NAT data and $5 of disks.
+413 VM-hours (about $96), $19 of Cloud NAT data and $5 of disks. The knobs above were tuned after that week.
+
+### Cloud NAT data
+
+Runner VMs have no public IP, so everything a job downloads from the internet goes through Cloud NAT,
+which bills $0.045 per GiB processed. Google APIs and Cloud Storage don't count: the subnet has Private
+Google Access. On the pool above NAT data cost more than the VMs: 282 MB per VM over the two weeks,
+almost all of it things every job downloaded again:
+
+| What | Per job | Fix |
+| --- | --- | --- |
+| `actions/checkout` of the whole tree | ~95 MB | `seed_workspace` (on by default): ~11 MB with a week-old image |
+| Actions themselves (checkout, setup-*, upload-artifact...) | ~10 MB | `action_archives` (on by default) |
+| `setup-dotnet`'s extra LTS runtime, `setup-java`, `setup-python`, Playwright browsers, servers fetched by URL | 30-350 MB | Install them in the toolchain hook at the versions your workflows ask for |
+| Package restores (npm, NuGet, pip) | varies | Warm the caches in the warm-cache hook |
+| `fetch-depth: 0` | the whole history | Fetch only the commits the job needs |
+
+The seed and the warm caches age with the image: a job fetches everything that changed since the
+build. A daily image build keeps that small; the example in [setup](setup.md#6-build-the-first-image)
+runs one.
+
+To find your own per-VM figure:
+
+```sh
+node scripts/nat-bytes.mjs --project my-ci-project --start 2026-11-20T00:00:00Z --end 2026-11-22T00:00:00Z
+```
+
+It divides the NAT gateways' received bytes by the number of VMs the scaler launched. To see which job
+pulls what, group `compute.googleapis.com/instance/network/received_bytes_count` by instance name and
+match each instance to the job that ran on it (the Actions API's `runner_name`; the job id in a VM's
+name is the job that triggered the launch, which may not be the one it ran).
 
 ### Measuring your own pool
 
@@ -114,6 +136,6 @@ catalog API has the prices (Compute Engine is service `6F81-5844-456A`; NAT is u
   `metadata.system_labels` or `metadata.user_labels`: for short-lived runner VMs many samples come
   without that metadata, and a grouped query silently drops them (half the hours or more, here).
 - **NAT data:** sum `router.googleapis.com/nat/sent_bytes_count` and `nat/received_bytes_count` by
-  region.
+  region, or run `scripts/nat-bytes.mjs` (above) for a per-VM figure.
 - **Spot prices** move monthly and differ a lot by family and region (in Nov 2026, Spot `c3d` cost
   about twice as much in `us-east4` as in `us-central1`). Pull them fresh before comparing.

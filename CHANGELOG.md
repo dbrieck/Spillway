@@ -16,6 +16,31 @@ Releases are tagged `vMAJOR.MINOR.PATCH`. Pin the commit SHA, not the tag ([upgr
 - Examples: `warm-nuget.sh` (NuGet cache warming), `pack-sources.sh` (a source snapshot that includes
   submodules) and `check-pins.sh` (a CI check that the image's toolchain matches the repository).
 
+## v0.2.1 (2026-11-22)
+
+Commit `4f03e460c28e3a2d5f03f3346474f335c30d6231`.
+
+- Image: the workspace seed is extracted with root ownership, so git no longer refuses to fetch from it
+  (`detected dubious ownership`) and the v0.2.0 image build passes. A failed seed now warns instead of
+  failing the build.
+
+Upgrade notes: move the image workflow pins to v0.2.1 and run an image build. No Terraform or scaler
+changes.
+
+## v0.2.0 (2026-11-22)
+
+Commit `f561c81b0701b7cd7b58f2ede7b4427165d67b25`.
+
+- Image: `build-image.yml` has two new inputs, both on by default. `seed_workspace` puts a depth-1
+  clone of the built commit in the runner's job workspace, so `actions/checkout` fetches only what
+  changed since the image. `action_archives` bakes the actions your workflows use into the runner's
+  action archive cache.
+- Scripts: `scripts/nat-bytes.mjs` reports NAT bytes per launched VM for a time window.
+- Docs: a Cloud NAT section in `docs/tuning.md`; the setup example builds the image daily.
+
+Upgrade notes: move the image workflow pins to v0.2.0 and run an image build. No Terraform or scaler
+changes. Set `seed_workspace: false` and `action_archives: false` to keep the old behaviour.
+
 ## v0.1.1 (2026-11-19)
 
 Commit `ea33603aafacdd6a9d200d22d36c40bff3b61a0e`.
