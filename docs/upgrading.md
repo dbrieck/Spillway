@@ -41,6 +41,34 @@ Bump all three pins in one pull request in your infrastructure repository, then:
 5. If the release changed anything under `image/`, run your image workflow once instead of waiting for
    the next scheduled build.
 
+## Upgrading to v0.2.2: custom roles
+
+v0.2.2 replaces the predefined admin roles of the scaler (`compute.instanceAdmin.v1`) and the image
+builder (`compute.instanceAdmin.v1`, `compute.storageAdmin`, `compute.osAdminLogin`) with custom roles.
+Swapping them in one apply is safe for IAM itself (a removed binding and an added one take effect
+within a minute or two of each other), but a permission missing from a custom role would only show
+when a VM launch or an image build fails. To keep the old roles until you have seen both work:
+
+1. Set `keep_legacy_admin_roles = true` on the module and apply. The plan adds the two custom roles
+   and their bindings and leaves the old bindings alone.
+2. Run the image workflow once and let a burst of jobs launch and delete runner VMs. Then look for
+   denials:
+   ```bash
+   gcloud logging read 'protoPayload.status.code=7 AND protoPayload.authenticationInfo.principalEmail:("ci-scaler@" OR "ci-image-builder@")'      --project my-ci-project --freshness=1d
+   ```
+   While the old roles are still bound, a permission missing from a custom role is not denied, so
+   also compare the permissions in the audit logs' `authorizationInfo` with the role definitions.
+3. Remove `keep_legacy_admin_roles` and apply. The plan deletes only the old bindings.
+
+Google reserves a deleted custom role's ID for several weeks, so a destroy followed by an apply in the
+same project within that window fails on the role. Undelete it with
+`gcloud iam roles undelete spillwayScaler --project my-ci-project` (likewise `spillwayImageBuilder`)
+and import it.
+
+The project may already have a Cloud DNS server policy on the runner network (one per network). If
+so, `terraform import 'module.spillway.google_dns_policy.ci[0]' projects/my-ci-project/policies/<name>`
+before applying, or set `enable_dns_logging = false`.
+
 ## Rolling back
 
 Put the three pins back and apply. Roll the scaler back to its previous Cloud Run revision with

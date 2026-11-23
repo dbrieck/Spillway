@@ -4,6 +4,7 @@ locals {
     "cloudscheduler.googleapis.com",
     "cloudtasks.googleapis.com",
     "compute.googleapis.com",
+    "dns.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "iap.googleapis.com",

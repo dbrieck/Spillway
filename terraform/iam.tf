@@ -20,8 +20,59 @@ resource "google_service_account" "scaler" {
   depends_on   = [google_project_service.enabled]
 }
 
+# Instance lifecycle only, as a custom role: CIS 1.5 (Security Health Analytics ADMIN_SERVICE_ACCOUNT)
+# flags a service account holding owner, editor or any role whose name contains "admin", and
+# roles/compute.instanceAdmin.v1 is one. The list is what instances.insert from the template checks
+# (the audit log's authorizationInfo), plus the reads the scaler makes.
+resource "google_project_iam_custom_role" "scaler" {
+  role_id     = "spillwayScaler"
+  title       = "Spillway scaler"
+  description = "Creates, lists and deletes Spillway runner VMs from the instance template."
+  permissions = [
+    "compute.disks.create",
+    "compute.globalOperations.list", # preemption lookup (aggregated operations list)
+    "compute.images.useReadOnly",
+    "compute.instanceTemplates.get", # template metadata, merged into each VM's
+    "compute.instanceTemplates.useReadOnly",
+    "compute.instances.create",
+    "compute.instances.delete",
+    "compute.instances.get",
+    "compute.instances.list",
+    "compute.instances.setLabels",
+    "compute.instances.setMetadata",
+    "compute.instances.setServiceAccount",
+    "compute.instances.setTags",
+    "compute.subnetworks.use",
+    "compute.zoneOperations.get",
+  ]
+  depends_on = [google_project_service.enabled]
+}
+
+# Keyed by role, so the predefined roles keep the state addresses earlier releases gave them. The
+# custom role sits under a fixed key because its name is only known after apply.
+locals {
+  legacy_scaler_roles        = ["roles/compute.instanceAdmin.v1"]
+  legacy_image_builder_roles = ["roles/compute.instanceAdmin.v1", "roles/compute.storageAdmin", "roles/compute.osAdminLogin"]
+
+  scaler_roles = merge(
+    {
+      custom                      = google_project_iam_custom_role.scaler.name
+      "roles/cloudtasks.enqueuer" = "roles/cloudtasks.enqueuer"
+      "roles/logging.logWriter"   = "roles/logging.logWriter"
+    },
+    { for r in local.legacy_scaler_roles : r => r if var.keep_legacy_admin_roles },
+  )
+  image_builder_roles = merge(
+    {
+      custom                             = google_project_iam_custom_role.image_builder.name
+      "roles/iap.tunnelResourceAccessor" = "roles/iap.tunnelResourceAccessor" # SSH to the build VM through IAP
+    },
+    { for r in local.legacy_image_builder_roles : r => r if var.keep_legacy_admin_roles },
+  )
+}
+
 resource "google_project_iam_member" "scaler" {
-  for_each = toset(["roles/compute.instanceAdmin.v1", "roles/cloudtasks.enqueuer", "roles/logging.logWriter"])
+  for_each = local.scaler_roles
   project  = var.project_id
   role     = each.value
   member   = "serviceAccount:${google_service_account.scaler.email}"
@@ -55,16 +106,53 @@ resource "google_service_account" "image_builder" {
   depends_on   = [google_project_service.enabled]
 }
 
+# Packer's temporary build VM, image capture and old-image pruning, as a custom role instead of
+# compute.instanceAdmin.v1 + compute.storageAdmin + compute.osAdminLogin (CIS 1.5, see the scaler's role).
+# The build VM has no service account, but instances.insert still checks setServiceAccount.
+resource "google_project_iam_custom_role" "image_builder" {
+  role_id     = "spillwayImageBuilder"
+  title       = "Spillway image builder"
+  description = "Runs the Packer build VM, captures the runner image and prunes old images."
+  permissions = [
+    "compute.disks.create",
+    "compute.disks.delete",
+    "compute.disks.get",
+    "compute.disks.useReadOnly", # image from the build VM's disk
+    "compute.globalOperations.get",
+    "compute.images.create",
+    "compute.images.delete", # Packer's cleanup and pruning old images in the family
+    "compute.images.get",
+    "compute.images.getFromFamily",
+    "compute.images.list",
+    "compute.images.setLabels",
+    "compute.images.useReadOnly",
+    "compute.instances.create",
+    "compute.instances.delete",
+    "compute.instances.get",
+    "compute.instances.getSerialPortOutput",
+    "compute.instances.list",
+    "compute.instances.osAdminLogin", # OS Login with sudo on the build VM
+    "compute.instances.osLogin",
+    "compute.instances.setLabels",
+    "compute.instances.setMetadata",
+    "compute.instances.setServiceAccount",
+    "compute.instances.setTags",
+    "compute.instances.stop",
+    "compute.machineTypes.get",
+    "compute.projects.get",
+    "compute.subnetworks.get",
+    "compute.subnetworks.use",
+    "compute.zoneOperations.get",
+    "compute.zones.get",
+  ]
+  depends_on = [google_project_service.enabled]
+}
+
 resource "google_project_iam_member" "image_builder" {
-  for_each = toset([
-    "roles/compute.instanceAdmin.v1",   # temporary build VM
-    "roles/compute.storageAdmin",       # create images, prune old ones
-    "roles/iap.tunnelResourceAccessor", # SSH to the build VM through IAP
-    "roles/compute.osAdminLogin",       # OS Login (use_os_login): Packer's key + sudo on the build VM
-  ])
-  project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${google_service_account.image_builder.email}"
+  for_each = local.image_builder_roles
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.image_builder.email}"
 }
 
 resource "google_iam_workload_identity_pool" "github" {

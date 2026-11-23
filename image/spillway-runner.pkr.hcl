@@ -14,7 +14,7 @@
 # step) and deleted before the image is captured. The build VM has no external IP and no service
 # account; Packer reaches it over IAP and logs in with OS Login (CIS 4.3 / 4.4 hold for the build VM
 # too): Packer imports a temporary key into the OS Login profile of the identity it runs as (the
-# image builder service account, which holds roles/compute.osAdminLogin for sudo) and removes it
+# image builder service account, whose custom role grants compute.instances.osAdminLogin for sudo) and removes it
 # afterwards. No key ever lands in instance or project metadata.
 
 packer {

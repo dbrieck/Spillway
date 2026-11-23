@@ -47,6 +47,14 @@ VM request itself, so neither the instance template nor its own metadata can wea
 | 4.8 | Shielded VM | Secure boot, vTPM and integrity monitoring on every VM |
 | 4.9 | No public IP | No external IPs at all: egress goes through Cloud NAT, inbound traffic is denied except IAP SSH when enabled |
 
+The module's project-level controls:
+
+| CIS | Control | How |
+|---|---|---|
+| 1.5 | No admin roles on service accounts | The scaler and the image builder hold custom roles (`spillwayScaler`, `spillwayImageBuilder`) listing only the permissions they use. Security Health Analytics flags any role whose name contains "admin", which the predefined compute roles do |
+| 2.12 | Cloud DNS logging | A DNS server policy with logging on the runner network (`enable_dns_logging`) |
+| 3.8 | VPC Flow Logs | On every runner subnet, sampled at 10% over 5-minute windows by default (`enable_flow_logs`, `flow_log_sampling`); see [tuning](docs/tuning.md#flow-and-dns-logs) |
+
 The Packer build VM meets the same controls and logs in through OS Login over IAP. Each VM runs one
 job and is deleted; the `runner` user has passwordless sudo, which is acceptable only because nothing
 outlives the job. Jobs that need GCP authenticate with their own workload identity, not the VM's.

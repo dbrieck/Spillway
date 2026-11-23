@@ -20,6 +20,30 @@ resource "google_compute_subnetwork" "ci" {
   network                  = google_compute_network.ci.id
   ip_cidr_range            = each.value
   private_ip_google_access = true
+
+  # CIS 3.8. Runner traffic is heavy (package restores, checkouts) and flow logs bill by volume, so the
+  # defaults sample 10% of flows over 5-minute windows without metadata. See docs/tuning.md.
+  dynamic "log_config" {
+    for_each = var.enable_flow_logs ? [1] : []
+    content {
+      aggregation_interval = var.flow_log_aggregation_interval
+      flow_sampling        = var.flow_log_sampling
+      metadata             = "EXCLUDE_ALL_METADATA"
+    }
+  }
+}
+
+# CIS 2.12: log the runner network's DNS queries. Logged queries are billed as Cloud Logging ingestion.
+resource "google_dns_policy" "ci" {
+  count          = var.enable_dns_logging ? 1 : 0
+  name           = "ci-runners-dns-logging"
+  enable_logging = true
+
+  networks {
+    network_url = google_compute_network.ci.id
+  }
+
+  depends_on = [google_project_service.enabled]
 }
 
 resource "google_compute_router" "ci" {
