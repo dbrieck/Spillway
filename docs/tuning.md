@@ -2,7 +2,7 @@
 
 Every knob is a variable of the Terraform module, applied to the scaler as Cloud Run env by
 `terraform apply`. Numbers below marked *measured* come from a production pool running a busy
-monorepo's CI in October 2026; re-check prices and quotas for your own project before relying on them.
+monorepo's CI from September to November 2026; re-check prices and quotas for your own project before relying on them.
 
 ## Knobs
 
@@ -69,16 +69,36 @@ janitor runs every 2 minutes.
 
 ## Cost
 
-*Measured,* first week on `n2` Spot before any of the tuning above: 413 VM-hours (about $96), $19 of
-Cloud NAT data and $5 of disks. Cloud Run, Cloud Tasks and Cloud Scheduler stayed within the free tier.
-The knobs above were tuned after that week; re-measure your own pool after changing them.
+*Measured,* two weeks in November 2026 (Nov 8 to 21) on the tuned pool: `c3d` Spot first, the small tier
+on, no public IPs, everything going out through Cloud NAT. 11,900 VMs ran about 1,480 VM-hours, 80% of them
+on `c3d-standard-4`, most of the rest on `c3d-standard-8`, 3% outside `us-central1`. From the Cloud
+Billing report for the project:
+
+| Item | Usage | Cost |
+|---|---|---|
+| Cloud NAT data processing | 2,921 GiB | $131 |
+| Spot `c3d` vCPU and memory | 7,856 vCPU-hours | $86 |
+| Persistent disks (80 GB `pd-balanced` each) | 205 GiB-months | $21 |
+| Cloud Run (the scaler) | | $9 |
+| Internet egress | 40 GiB | $5 |
+| Cloud NAT gateway and everything else | | $6 |
+| **Total** | | **$257, about $18 a day** |
+
+The two weeks before, mostly before runners moved behind Cloud NAT, cost $97. Cloud Tasks and Cloud
+Scheduler stayed within the free tier; Cloud Run did not at this volume.
+
+NAT data costs more than the VMs; [Cloud NAT data](#cloud-nat-data) below says where it comes from
+and how to cut it.
+
+*Measured,* first week (late September 2026) on `n2` Spot, mostly with public IPs, before any of the tuning above:
+413 VM-hours (about $96), $19 of Cloud NAT data and $5 of disks. The knobs above were tuned after that week.
 
 ### Cloud NAT data
 
 Runner VMs have no public IP, so everything a job downloads from the internet goes through Cloud NAT,
 which bills $0.045 per GiB processed. Google APIs and Cloud Storage don't count: the subnet has Private
-Google Access. On a busy pool NAT data can cost as much as the VMs. One pool measured 282 MB per VM over two
-weeks, about $130 for 11,900 VMs, almost all of it things every job downloaded again:
+Google Access. On the pool above NAT data cost more than the VMs: 282 MB per VM over the two weeks,
+almost all of it things every job downloaded again:
 
 | What | Per job | Fix |
 | --- | --- | --- |
@@ -102,3 +122,20 @@ It divides the NAT gateways' received bytes by the number of VMs the scaler laun
 pulls what, group `compute.googleapis.com/instance/network/received_bytes_count` by instance name and
 match each instance to the job that ran on it (the Actions API's `runner_name`; the job id in a VM's
 name is the job that triggered the launch, which may not be the one it ran).
+
+### Measuring your own pool
+
+The Cloud Billing report, grouped by SKU and filtered to the project, is the source of truth. To see where
+the usage comes from, or without access to billing, Cloud Monitoring has the usage and the Cloud Billing
+catalog API has the prices (Compute Engine is service `6F81-5844-456A`; NAT is under Networking,
+`E505-1604-58F8`). Priced that way, the two weeks above came within about 15% of the bill on each line.
+
+- **VM-hours:** sum `compute.googleapis.com/instance/uptime` per instance, filtered to
+  `metric.labels.instance_name=starts_with("<runner_name_prefix>")`, and join each instance to its
+  `launched runner` log line for machine type, zone and provisioning model. Don't group the metric by
+  `metadata.system_labels` or `metadata.user_labels`: for short-lived runner VMs many samples come
+  without that metadata, and a grouped query silently drops them (half the hours or more, here).
+- **NAT data:** sum `router.googleapis.com/nat/sent_bytes_count` and `nat/received_bytes_count` by
+  region, or run `scripts/nat-bytes.mjs` (above) for a per-VM figure.
+- **Spot prices** move monthly and differ a lot by family and region (in Nov 2026, Spot `c3d` cost
+  about twice as much in `us-east4` as in `us-central1`). Pull them fresh before comparing.
