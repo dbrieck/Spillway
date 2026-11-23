@@ -187,3 +187,38 @@ variable "enable_iap_ssh" {
   type        = bool
   default     = false
 }
+
+variable "keep_legacy_admin_roles" {
+  description = "Upgrade aid: also keep the predefined admin roles (compute.instanceAdmin.v1, compute.storageAdmin, compute.osAdminLogin) that releases before v0.2.2 granted the scaler and image builder. Set true for one apply to grant the custom roles alongside them, verify an image build and a burst, then set false (the default) and apply again. See docs/upgrading.md."
+  type        = bool
+  default     = false
+}
+
+variable "enable_flow_logs" {
+  description = "VPC Flow Logs on the runner subnets (CIS 3.8). Billed by log volume; see flow_log_sampling."
+  type        = bool
+  default     = true
+}
+
+variable "flow_log_aggregation_interval" {
+  description = "Flow log aggregation interval. Longer intervals write fewer entries. One of INTERVAL_5_SEC, INTERVAL_30_SEC, INTERVAL_1_MIN, INTERVAL_5_MIN, INTERVAL_10_MIN, INTERVAL_15_MIN."
+  type        = string
+  default     = "INTERVAL_5_MIN"
+}
+
+variable "flow_log_sampling" {
+  description = "Share of flows logged, 0 to 1. CIS GCP 1.2.0 (3.8) only checks that flow logs are on; CIS 2.0 and later want 1.0, which costs about ten times as much on a busy pool."
+  type        = number
+  default     = 0.1
+
+  validation {
+    condition     = var.flow_log_sampling > 0 && var.flow_log_sampling <= 1
+    error_message = "flow_log_sampling must be greater than 0 and at most 1."
+  }
+}
+
+variable "enable_dns_logging" {
+  description = "A Cloud DNS server policy with query logging on the runner network (CIS 2.12). A network takes one server policy, so set false if you manage one yourself."
+  type        = bool
+  default     = true
+}

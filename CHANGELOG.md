@@ -4,6 +4,19 @@ Releases are tagged `vMAJOR.MINOR.PATCH`. Pin the commit SHA, not the tag ([upgr
 
 ## Unreleased
 
+- CIS GCP 1.5: the scaler and the image builder get custom roles (`spillwayScaler`,
+  `spillwayImageBuilder`) instead of `compute.instanceAdmin.v1`, `compute.storageAdmin` and
+  `compute.osAdminLogin`. Security Health Analytics reports ADMIN_SERVICE_ACCOUNT for any service
+  account holding a role with "admin" in its name. The permission lists come from 30 days of audit logs
+  (`authorizationInfo`) for both accounts plus the reads in the code.
+- CIS GCP 3.8: VPC Flow Logs on the runner subnets. New variables `enable_flow_logs` (true),
+  `flow_log_sampling` (0.1) and `flow_log_aggregation_interval` (`INTERVAL_5_MIN`), set low because flow
+  logs bill by volume.
+- CIS GCP 2.12: a Cloud DNS server policy with query logging on the runner network
+  (`ci-runners-dns-logging`), and `dns.googleapis.com` in the enabled services. `enable_dns_logging`
+  (true) turns it off if you manage the network's server policy yourself.
+- `keep_legacy_admin_roles` (false): an upgrade aid that keeps the old predefined roles next to the
+  custom ones for one apply.
 - Docs: an [operations guide](docs/operations.md) (checking the pool, pausing and draining,
   troubleshooting, debugging a VM, canarying a scaler version), [upgrading](docs/upgrading.md), and this
   changelog. Upgrading covers adopting an existing install with `moved` or `import` blocks.

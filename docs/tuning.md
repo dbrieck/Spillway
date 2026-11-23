@@ -25,6 +25,8 @@ monorepo's CI from September to November 2026; re-check prices and quotas for yo
 | `small_machine_types` / `small_runner_labels` | off / `self-hosted`, `Linux`, `gcp-small` | Small tier (below) |
 | `runner_regions` / `zones` | 4 US regions / 13 zones | Where VMs may land. Each region gets a subnet and Cloud NAT |
 | `enable_iap_ssh` | false | Allow SSH to runner VMs through IAP, for debugging |
+| `enable_flow_logs` / `flow_log_sampling` / `flow_log_aggregation_interval` | true / 0.1 / `INTERVAL_5_MIN` | VPC Flow Logs on the runner subnets (CIS 3.8). See [flow and DNS logs](#flow-and-dns-logs) |
+| `enable_dns_logging` | true | Cloud DNS query logging on the runner network (CIS 2.12) |
 
 ## Choosing machine types
 
@@ -122,6 +124,19 @@ It divides the NAT gateways' received bytes by the number of VMs the scaler laun
 pulls what, group `compute.googleapis.com/instance/network/received_bytes_count` by instance name and
 match each instance to the job that ran on it (the Actions API's `runner_name`; the job id in a VM's
 name is the job that triggered the launch, which may not be the one it ran).
+
+### Flow and DNS logs
+
+Flow logs and DNS query logs are both billed as Cloud Logging ingestion, and runner traffic is heavy:
+every job restores packages and checks out code through many short connections. The module's defaults
+keep the volume down: 10% of flows (`flow_log_sampling = 0.1`), aggregated over 5 minutes
+(`INTERVAL_5_MIN`), without metadata. CIS GCP 1.2.0 (3.8) only checks that flow logs are on, so the
+defaults pass it. CIS 2.0 and later also want `flow_log_sampling = 1.0`, which writes about ten times
+as much. Check the `compute.googleapis.com/vpc_flows` log volume in Logs Storage for a week before
+raising it, and consider an exclusion filter or a shorter retention bucket if it grows.
+
+DNS query logs cost one entry per lookup a VM makes. If they turn out to be the larger cost, exclude
+`dns_queries` entries for well-known names in a sink filter rather than turning logging off.
 
 ### Measuring your own pool
 
